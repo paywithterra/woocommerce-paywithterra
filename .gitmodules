@@ -1,0 +1,3 @@
+[submodule "php-api-library"]
+	path = php-api-library
+	url = https://github.com/paywithterra/php-api-library.git
