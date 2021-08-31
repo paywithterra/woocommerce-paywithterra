@@ -1,4 +1,4 @@
-# PaywithTerra PHP Library
+# PaywithTerra WooCommerce plugin
 Officially supported WooCommerce PaywithTerra Payment Gateway plugin.  
 Based on [PaywithTerra PHP Library](https://github.com/paywithterra/php-api-library).
 
