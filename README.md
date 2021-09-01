@@ -1,5 +1,5 @@
 # PaywithTerra WooCommerce plugin
-Officially supported WooCommerce PaywithTerra Payment Gateway plugin.  
+Officially supported PaywithTerra Payment Gateway plugin for WooCommerce.  
 Based on [PaywithTerra PHP Library](https://github.com/paywithterra/php-api-library).
 
 ## Prerequisites
@@ -27,7 +27,7 @@ git clone --recursive https://github.com/paywithterra/woocommerce-paywithterra.g
 
 ## Usage
 
-1. Activate plugin in WordPress Dashboard named  **WooCommerce PaywithTerra Payment Gateway**.
+1. Activate plugin in WordPress Dashboard named  **PaywithTerra Payment Gateway**.
 2. Go to WooCommerce - Settings - Payments and press "Set up" button near the new **PaywithTerra** method.
 3. Fill the API Key and Address fields and make payment method Active.
 

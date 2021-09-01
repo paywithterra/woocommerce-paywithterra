@@ -1,8 +1,8 @@
 <?php
 /*
- * Plugin Name: WooCommerce PaywithTerra Payment Gateway
+ * Plugin Name: PaywithTerra Payment Gateway
  * Plugin URI: https://github.com/paywithterra/woocommerce-paywithterra
- * Description: Take Terra payments on your store.
+ * Description: Take Terra payments on your WooCommerce store.
  * Author: PaywithTerra
  * Author URI: https://paywithterra.com
  * Version: 1.0.1
