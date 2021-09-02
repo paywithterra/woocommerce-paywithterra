@@ -5,7 +5,7 @@
  * Description: Take Terra payments on your WooCommerce store.
  * Author: PaywithTerra
  * Author URI: https://paywithterra.com
- * Version: 1.0.1
+ * Version: v1.0.2
  * License: MIT
  */
 
@@ -13,7 +13,7 @@
  * This hook registers our PHP class as a WooCommerce payment gateway
  */
 add_filter( 'woocommerce_payment_gateways', 'paywithterra_add_gateway_class' );
-if(! function_exists('paywithterra_add_gateway_class')){
+if ( ! function_exists( 'paywithterra_add_gateway_class' ) ) {
 	function paywithterra_add_gateway_class( $gateways ) {
 		$gateways[] = 'WC_PaywithTerra_Gateway';
 
@@ -22,7 +22,7 @@ if(! function_exists('paywithterra_add_gateway_class')){
 }
 
 add_action( 'plugins_loaded', 'paywithterra_init_gateway_class' );
-if(! function_exists('paywithterra_init_gateway_class')){
+if ( ! function_exists( 'paywithterra_init_gateway_class' ) ) {
 	function paywithterra_init_gateway_class() {
 
 		// Load PaywithTerra PHP library
@@ -38,9 +38,7 @@ if(! function_exists('paywithterra_init_gateway_class')){
 			private $private_key;
 
 			/**
-			 * Whether or not logging is enabled
-			 * TODO: Make this property as setting from admin
-			 *
+			 * Whether or not logging is enabled			 *
 			 * @var bool
 			 */
 			public static $log_enabled = false;
@@ -58,7 +56,6 @@ if(! function_exists('paywithterra_init_gateway_class')){
 			public function __construct() {
 
 				$this->id                 = 'paywithterra'; // payment gateway plugin ID
-				$this->icon               = plugins_url( '/assets/images/logo.svg', __FILE__ ); // URL of the icon that will be displayed on checkout page
 				$this->has_fields         = false; // in case you need a custom credit card form
 				$this->method_title       = 'PaywithTerra';
 				$this->method_description = 'Direct payments in Terra blockchain';
@@ -72,11 +69,13 @@ if(! function_exists('paywithterra_init_gateway_class')){
 
 				// Load the settings.
 				$this->init_settings();
+				$this->icon        = $this->selected_icon_url(); // URL of the icon that will be displayed on checkout page
 				$this->title       = $this->get_option( 'title' );
 				$this->description = $this->get_option( 'description' );
 				$this->enabled     = $this->get_option( 'enabled' );
 				$this->address     = $this->get_option( 'address' );
 				$this->private_key = $this->get_option( 'private_key' );
+				self::$log_enabled = ( "yes" === $this->get_option( 'log_enabled' ) );
 
 				add_action( 'woocommerce_update_options_payment_gateways_' . $this->id, array(
 					$this,
@@ -92,37 +91,80 @@ if(! function_exists('paywithterra_init_gateway_class')){
 			public function init_form_fields() {
 
 				$this->form_fields = array(
-					'private_key' => array(
+					'private_key'     => array(
 						'title'       => 'API Key (token)',
 						'type'        => 'password',
 						'description' => 'API key from your PaywithTerra <a target="_blank" href="https://paywithterra.com/account">account page</a>.',
 					),
-					'address'     => array(
+					'address'         => array(
 						'title'       => 'Terra address',
 						'type'        => 'text',
 						'description' => 'Your shop wallet address on the Terra blockchain to receiving payments.',
 					),
-					'enabled'     => array(
+					'enabled'         => array(
 						'title'       => 'Enable/Disable',
 						'label'       => 'Enable PaywithTerra Gateway',
 						'type'        => 'checkbox',
 						'description' => '',
 						'default'     => 'no'
 					),
-					'title'       => array(
+					'title'           => array(
 						'title'       => 'Title',
 						'type'        => 'text',
 						'description' => 'This controls the title which the user sees during checkout.',
 						'default'     => 'PaywithTerra',
 					),
-					'description' => array(
+					'description'     => array(
 						'title'       => 'Description',
 						'type'        => 'textarea',
 						'description' => 'This controls the description which the user sees during checkout.',
 						'default'     => '',
 					),
+					'log_enabled'     => array(
+						'title'       => 'Error logging',
+						'label'       => 'Enable logging for errors while interaction with PaywithTerra API',
+						'type'        => 'checkbox',
+						'description' => '',
+						'default'     => 'no'
+					),
+					'icon'            => array(
+						'title'       => 'Public icon',
+						'type'        => 'select',
+						'default'     => 'logo',
+						'options'     => array(
+							'logo'       => "PaywithTerra logo",
+							'icon-rect'  => "PaywithTerra icon rectangle",
+							'custom-url' => "Custom icon",
+						),
+						'description' => 'Shown on payment method selection page',
+					),
+					'custom_icon_url' => array(
+						'title'       => 'Custom icon',
+						'type'        => 'text',
+						'placeholder' => 'https://',
+						'description' => '<b>Full url</b> (from http) to custom payment icon image.',
+						'default'     => '',
+					),
 				);
 
+			}
+
+			public function selected_icon_url() {
+				$icon_option     = $this->get_option( 'icon' );
+				$custom_icon_url = $this->get_option( 'custom_icon_url' );
+
+				if ( $icon_option === 'custom-url' ) {
+					if ( $custom_icon_url !== "" ) {
+						return esc_attr( $custom_icon_url );
+					} else {
+						// Selected custom option but nothing specified - doing like simple "logo" selected
+						$icon_option = "logo";
+					}
+				}
+
+				$icon_option = esc_attr( $icon_option );
+
+				return plugins_url( "/assets/images/$icon_option.svg", __FILE__ );
 			}
 
 
@@ -169,20 +211,39 @@ if(! function_exists('paywithterra_init_gateway_class')){
 
 				$client = new PaywithTerra\PaywithTerraClient( $this->private_key );
 
-				// Protection Layer 1 - checking correct hash
-				$input = $client->checkIncomingData( $_POST );
+				$data_dirty = $_POST;
 
-				$memo          = $input['memo'];
-				$order_id      = $memo;
-				$input_address = $input['address'];
-				$input_amount  = (int) $input['amount'];
-				$input_denom   = $input['denom'];
-				$input_uuid    = $input['uuid'];
-				$txhash        = $input['txhash'];
+				/*
+				 * For WP Review team
+				 * About: "you should only be attempting to process the items 
+				 * within that are required for your plugin to function"
+				 *
+				 * We must create hash from all incoming data, because regarding server settings
+				 * or requested mode (LIVE or TEST) - server may send different sets of fields. 
+				 * So there is no exist static list of predefined fields.
+				 * If we put to $client->checkIncomingData only whitelisted fields - resulting hash 
+				 * may be different from the hash which calculated on server.
+				 * 
+				 * That's why we put to sanitizer and hash calculator all incoming data
+				 */
+				$data_sanitized = array_map( 'sanitize_text_field', $data_dirty );
+
+				// Protection Layer 1 - checking correct hash
+				$data_checked = $client->checkIncomingData( $data_sanitized );
+
+				$memo          = $data_checked['memo'];
+				$order_id      = (int) $memo;
+				$input_address = $data_checked['address'];
+				$input_amount  = (int) $data_checked['amount'];
+				$input_denom   = $data_checked['denom'];
+				$input_uuid    = $data_checked['uuid'];
+				$txhash        = $data_checked['txhash'];
 
 
 				$order = wc_get_order( $order_id );
 				if ( ! $order ) {
+					$this->log( "Webhook: order was not found by specified ID: $order_id", 'critical' );
+
 					return;
 				}
 
@@ -191,6 +252,8 @@ if(! function_exists('paywithterra_init_gateway_class')){
 				// Protection Layer 2 - remote order need to be issued from this system
 				if ( ! in_array( $input_uuid, $issued_tokens ) ) {
 					$order->add_order_note( "Order processing error: unissued uuid." );
+
+					$this->log( "Webhook: remote order uuid was not issued: $input_uuid", 'critical' );
 
 					return;
 				}
@@ -201,15 +264,22 @@ if(! function_exists('paywithterra_init_gateway_class')){
 				if ( $order_amount !== $input_amount ) {
 					$order->add_order_note( "Order processing error: wrong amount. $input_amount != $order_amount" );
 
+					$this->log( "Webhook: amounts not equals: $input_amount != $order_amount", 'critical' );
+
 					return;
 				}
-				if ( $this->currency_to_denom( $order->get_currency() ) !== $input_denom ) {
+
+				if ( $order_denom = $this->currency_to_denom( $order->get_currency() ) !== $input_denom ) {
 					$order->add_order_note( "Order processing error: wrong denom (currency)." );
+
+					$this->log( "Webhook: denoms not equals: $input_denom != $order_denom", 'critical' );
 
 					return;
 				}
 				if ( $input_address != $this->address ) {
 					$order->add_order_note( "Tx payment address is not the same as in payment gateway settings." );
+
+					$this->log( "Webhook: addresses not equals: $input_address != $this->address", 'critical' );
 
 					return;
 				}
@@ -220,6 +290,8 @@ if(! function_exists('paywithterra_init_gateway_class')){
 
 				if ( ! $payment_result ) {
 					$order->add_order_note( "PaywithTerra API returned that order does not payed." );
+
+					$this->log( "Webhook: second check failed", 'critical' );
 
 					return;
 				}
@@ -307,7 +379,7 @@ if(! function_exists('paywithterra_init_gateway_class')){
 					"return_url" => $this->get_return_url( $order )
 				) );
 
-				if (! in_array((int) $client->getLastResponseCode(), array(200, 201)) ) {
+				if ( ! in_array( (int) $client->getLastResponseCode(), array( 200, 201 ) ) ) {
 
 					$err = "Unable to create PaywithTerra order. ";
 					if ( isset( $order_info['message'] ) ) {
@@ -315,7 +387,7 @@ if(! function_exists('paywithterra_init_gateway_class')){
 						if ( isset( $order_info['errors'] ) ) {
 
 							$plainErrors = array_map( function ( $er ) {
-								return reset( $er );
+								return sanitize_text_field( reset( $er ) );
 							}, $order_info['errors'] );
 
 							$err .= implode( "<br>", $plainErrors );
@@ -324,7 +396,7 @@ if(! function_exists('paywithterra_init_gateway_class')){
 					$err .= '<br>Please, contact website administrator';
 					wc_add_notice( $err, 'error' );
 
-					$this->log(json_encode($order_info), 'critical');
+					$this->log( json_encode( $order_info ), 'critical' );
 
 					return false;
 
