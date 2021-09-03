@@ -7,7 +7,7 @@ Tested up to: 5.8
 Requires PHP: 5.6
 License: MIT
 License URI: https://raw.githubusercontent.com/paywithterra/woocommerce-paywithterra/main/LICENSE
-Stable tag: 1.0.2
+Stable tag: 1.0.3
 
 Take Terra payments on your WooCommerce store.
 

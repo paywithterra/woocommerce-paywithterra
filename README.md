@@ -14,7 +14,7 @@ Once our plug-in will be reviewed in official plugins stores, we will add easier
 
 ### A. Install manually
 
-Download the [release on GitHub](https://github.com/paywithterra/woocommerce-paywithterra/releases)
+Download the [release on GitHub](https://github.com/paywithterra/woocommerce-paywithterra/releases/latest)
 and unpack to the `wp-content/plugins` directory.
 
 ### B. Install from GitHub
