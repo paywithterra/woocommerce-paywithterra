@@ -5,7 +5,7 @@
  * Description: Take Terra payments on your WooCommerce store.
  * Author: PaywithTerra
  * Author URI: https://paywithterra.com
- * Version: v1.0.2
+ * Version: 1.0.2
  * License: MIT
  */
 
@@ -211,8 +211,6 @@ if ( ! function_exists( 'paywithterra_init_gateway_class' ) ) {
 
 				$client = new PaywithTerra\PaywithTerraClient( $this->private_key );
 
-				$data_dirty = $_POST;
-
 				/*
 				 * For WP Review team
 				 * About: "you should only be attempting to process the items 
@@ -226,7 +224,7 @@ if ( ! function_exists( 'paywithterra_init_gateway_class' ) ) {
 				 * 
 				 * That's why we put to sanitizer and hash calculator all incoming data
 				 */
-				$data_sanitized = array_map( 'sanitize_text_field', $data_dirty );
+				$data_sanitized = array_map( 'sanitize_text_field', $_POST );
 
 				// Protection Layer 1 - checking correct hash
 				$data_checked = $client->checkIncomingData( $data_sanitized );
