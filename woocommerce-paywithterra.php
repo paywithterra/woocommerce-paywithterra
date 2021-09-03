@@ -27,8 +27,9 @@ if ( ! function_exists( 'paywithterra_init_gateway_class' ) ) {
 
 		// Load PaywithTerra PHP library
 		$library_path = __DIR__ . DIRECTORY_SEPARATOR . 'php-api-library/src/PaywithTerraClient.php';
-		if(! file_exists($library_path)){
-			error_log('PaywithTerra plugin is not installed properly (PaywithTerraClient not found)!');
+		if ( ! file_exists( $library_path ) ) {
+			error_log( 'PaywithTerra plugin is not installed properly (PaywithTerraClient not found)!' );
+
 			return;
 		}
 		require_once $library_path;
@@ -43,7 +44,7 @@ if ( ! function_exists( 'paywithterra_init_gateway_class' ) ) {
 			private $private_key;
 
 			/**
-			 * Whether or not logging is enabled			 *
+			 * Whether or not logging is enabled
 			 * @var bool
 			 */
 			public static $log_enabled = false;
@@ -462,5 +463,23 @@ if ( ! function_exists( 'paywithterra_init_gateway_class' ) ) {
 				}
 			}
 		}
+	}
+}
+
+add_filter( 'plugin_action_links_' . plugin_basename( __FILE__ ), 'paywithterra_plugin_action_links' );
+if ( ! function_exists( 'paywithterra_plugin_action_links' ) ) {
+	/**
+	 * Show action links on the plugin screen.
+	 *
+	 * @param mixed $links Plugin Action links.
+	 *
+	 * @return array
+	 */
+	function paywithterra_plugin_action_links( $links ) {
+		$action_links = array(
+			'settings' => '<a href="' . admin_url( 'admin.php?page=wc-settings&tab=checkout&section=paywithterra' ) . '">Set up</a>',
+		);
+
+		return array_merge( $action_links, $links );
 	}
 }
