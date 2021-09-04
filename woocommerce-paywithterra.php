@@ -5,7 +5,7 @@
  * Description: Take Terra payments on your WooCommerce store.
  * Author: PaywithTerra
  * Author URI: https://paywithterra.com
- * Version: 1.0.3
+ * Version: 1.0.4
  * License: MIT
  */
 
@@ -24,6 +24,12 @@ if ( ! function_exists( 'paywithterra_add_gateway_class' ) ) {
 add_action( 'plugins_loaded', 'paywithterra_init_gateway_class' );
 if ( ! function_exists( 'paywithterra_init_gateway_class' ) ) {
 	function paywithterra_init_gateway_class() {
+		
+		if(! class_exists('WC_Payment_Gateway')){
+			error_log( 'WooCommerce is not installed or activated' );
+
+			return;
+		}
 
 		// Load PaywithTerra PHP library
 		$library_path = __DIR__ . DIRECTORY_SEPARATOR . 'php-api-library/src/PaywithTerraClient.php';

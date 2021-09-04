@@ -7,7 +7,7 @@ Tested up to: 5.8
 Requires PHP: 5.6
 License: MIT
 License URI: https://raw.githubusercontent.com/paywithterra/woocommerce-paywithterra/main/LICENSE
-Stable tag: 1.0.3
+Stable tag: 1.0.4
 
 Take Terra payments on your WooCommerce store.
 
@@ -34,6 +34,12 @@ Create an account and receive the API key in the \"My Account\" section. Details
 You can get an API Key for free (14 days) with using TERRAPOWER coupon code.
 
 == Changelog ==
+
+= 1.0.4 - 2021-09-04 =
+* Update - Plugin now checks if WooCommerce activated before starting
+
+= 1.0.3 - 2021-09-03 =
+* Update - UI now contains link to quick-navigation for plugin setup
 
 = 1.0.2 - 2021-09-02 =
 * Update - Added logging option, ability to select icon and few fixes (security and reviewity)
