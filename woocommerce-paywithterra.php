@@ -5,7 +5,7 @@
  * Description: Take Terra payments on your WooCommerce store.
  * Author: PaywithTerra
  * Author URI: https://paywithterra.com
- * Version: 1.0.4
+ * Version: 1.0.5
  * License: MIT
  */
 
@@ -389,9 +389,9 @@ if ( ! function_exists( 'paywithterra_init_gateway_class' ) ) {
 					"return_url" => $this->get_return_url( $order )
 				) );
 
-				if ( ! in_array( (int) $client->getLastResponseCode(), array( 200, 201 ) ) ) {
+				if ( ! in_array($response_code = (int) $client->getLastResponseCode(), array( 200, 201 ) ) ) {
 
-					$err = "Unable to create PaywithTerra order. ";
+					$err = "Unable to create PaywithTerra order. Code: $response_code";
 					if ( isset( $order_info['message'] ) ) {
 						$err .= $order_info['message'] . ' <br>';
 						if ( isset( $order_info['errors'] ) ) {
