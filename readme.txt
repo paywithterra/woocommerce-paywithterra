@@ -35,6 +35,9 @@ You can get an API Key for free (14 days) with using TERRAPOWER coupon code.
 
 == Changelog ==
 
+= 1.0.6 - 2021-09-15 =
+* Update - Order note about successful payment now contains link to Terra Finder
+
 = 1.0.5 - 2021-09-04 =
 * Update - Plugin now shows the last HTTP code in case of order creation error
 
