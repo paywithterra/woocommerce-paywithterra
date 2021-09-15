@@ -296,9 +296,10 @@ if ( ! function_exists( 'paywithterra_init_gateway_class' ) ) {
 
 
 				// Protection Layer 4 - doing "Second check" to request actual data from API
-				$payment_result = $client->isOrderPayedByUUID( $input_uuid );
+				$payment_result = $client->getOrderStatusByUUID( $input_uuid );
+				$is_payed = (bool) $payment_result["is_payed"];
 
-				if ( ! $payment_result ) {
+				if ( ! $is_payed ) {
 					$order->add_order_note( "PaywithTerra API returned that order does not payed." );
 
 					$this->log( "Webhook: second check failed", 'critical' );
@@ -308,8 +309,13 @@ if ( ! function_exists( 'paywithterra_init_gateway_class' ) ) {
 
 				// Mark order as payment complete
 				$order->payment_complete();
+				
+				$terra_finder_link = esc_url($payment_result['tx_link']);
 
-				$order->add_order_note( "Payment was captured. TxHash: " . $txhash );
+				$order_note = "Payment was captured. TxHash: " . $txhash;
+				$order_note .= "\n";
+				$order_note .= '<a href="'.$terra_finder_link.'" target="_blank">View on Terra Finder</a>';
+				$order->add_order_note( $order_note );
 
 			}
 
