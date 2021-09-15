@@ -5,7 +5,7 @@
  * Description: Take Terra payments on your WooCommerce store.
  * Author: PaywithTerra
  * Author URI: https://paywithterra.com
- * Version: 1.0.5
+ * Version: 1.0.6
  * License: MIT
  */
 
