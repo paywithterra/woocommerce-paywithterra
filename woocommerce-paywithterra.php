@@ -5,7 +5,7 @@
  * Description: Take Terra payments on your WooCommerce store.
  * Author: PaywithTerra
  * Author URI: https://paywithterra.com
- * Version: 1.0.6
+ * Version: 1.0.7
  * License: MIT
  */
 
@@ -49,6 +49,8 @@ if ( ! function_exists( 'paywithterra_init_gateway_class' ) ) {
 			public $address;
 			private $private_key;
 
+			private $disable_ssl_check = false;
+
 			/**
 			 * Whether or not logging is enabled
 			 * @var bool
@@ -87,6 +89,7 @@ if ( ! function_exists( 'paywithterra_init_gateway_class' ) ) {
 				$this->enabled     = $this->get_option( 'enabled' );
 				$this->address     = $this->get_option( 'address' );
 				$this->private_key = $this->get_option( 'private_key' );
+				$this->disable_ssl_check = $this->get_option( 'disable_ssl_check' ) === 'yes';
 				self::$log_enabled = ( "yes" === $this->get_option( 'log_enabled' ) );
 
 				add_action( 'woocommerce_update_options_payment_gateways_' . $this->id, array(
@@ -157,6 +160,13 @@ if ( ! function_exists( 'paywithterra_init_gateway_class' ) ) {
 						'description' => '<b>Full url</b> (from http) to custom payment icon image.',
 						'default'     => '',
 					),
+					'disable_ssl_check' => array(
+						'title'       => 'Disable SSL Check',
+						'label'       => 'Enable this option to skip SSL check while connecting to PaywithTerra Gateway',
+						'type'        => 'checkbox',
+						'description' => '',
+						'default'     => 'no'
+					),
 				);
 
 			}
@@ -221,7 +231,7 @@ if ( ! function_exists( 'paywithterra_init_gateway_class' ) ) {
 			 */
 			public function webhook() {
 
-				$client = new PaywithTerra\PaywithTerraClient( $this->private_key );
+				$client = $this->prepare_client();
 
 				/*
 				 * For WP Review team
@@ -319,6 +329,24 @@ if ( ! function_exists( 'paywithterra_init_gateway_class' ) ) {
 
 			}
 
+			protected function prepare_client()
+			{
+				$client = new PaywithTerra\PaywithTerraClient( $this->private_key );
+
+				$opts = [
+					CURLOPT_TIMEOUT => 30,
+				];
+
+				if($this->disable_ssl_check){
+					$opts[CURLOPT_SSL_VERIFYPEER] = false;
+					$opts[CURLOPT_SSL_VERIFYHOST] = false;
+				}
+
+				$client->setCurlOptions($opts);
+
+				return $client;
+			}
+
 			/**
 			 * Returns first actual payment token from database if exists
 			 *
@@ -333,7 +361,7 @@ if ( ! function_exists( 'paywithterra_init_gateway_class' ) ) {
 					return false;
 				}
 
-				$client = new PaywithTerra\PaywithTerraClient( $this->private_key );
+				$client = $this->prepare_client();
 
 				foreach ( $issued_uuids as $uuid ) {
 					$order_data = $client->getOrderStatusByUUID( $uuid );
@@ -384,7 +412,7 @@ if ( ! function_exists( 'paywithterra_init_gateway_class' ) ) {
 					return $exists_uuid;
 				}
 
-				$client = new PaywithTerra\PaywithTerraClient( $this->private_key );
+				$client = $this->prepare_client();
 
 				$order_info = $client->createOrder( array(
 					"address"    => $this->address,
