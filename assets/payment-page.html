@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{order_id}}</title>
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/paywithterra/frontend@0.0.x/dist/css/app.css">
+</head>
+<body>
+<noscript>
+    <strong>We're sorry but payment doesn't work properly without JavaScript enabled. Please enable it and refresh page to continue.</strong>
+</noscript>
+
+<p>Waiting for payment...</p>
+
+
+<script>
+    // automatically launch the app when the page is loaded
+    window.addEventListener('payWithTerra-ready', () => {
+
+        window.payWithTerra.start({
+            showTestnetWarning: "{{testnet_warning}}" === "true",
+            //chainId: "phoenix-1", // "pisco-1" or "phoenix-1"
+            networkName: "{{network}}", // "mainnet" or "testnet"
+            merchantAddress: "{{merchant_address}}",
+            merchantEndpoint: "{{merchant_endpoint}}",
+            memo: "{{order_prefix}}{{order_id}}",
+            total: "{{order_total}}",
+            currency: "{{order_currency}}",
+            denom: "{{order_denom}}",
+            amount: "{{order_amount}}",
+            finderTxUrl: "{{finder_tx_url}}",
+
+            onClose: (hash) => {
+                console.log("onClose", hash);
+
+                if(hash) {
+                } else {
+                    history.back();
+                }
+            },
+            onSuccess: (hash) => {
+                console.log("onSuccess", hash);
+            }
+        })
+
+    })
+
+
+</script>
+
+<script async src="https://cdn.jsdelivr.net/gh/paywithterra/frontend@0.0.x/dist/js/app.js"></script>
+</body>
+</html>

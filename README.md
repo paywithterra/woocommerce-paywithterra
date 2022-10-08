@@ -5,13 +5,14 @@
 [![Twitter Follow](https://img.shields.io/twitter/follow/PaywithTerra?label=%40PaywithTerra)](https://twitter.com/paywithterra)
 
 Officially supported PaywithTerra Payment Gateway plugin for WooCommerce.  
-Based on [PaywithTerra PHP Library](https://github.com/paywithterra/php-api-library).
+Based on [PaywithTerra Backend PHP Library](https://github.com/paywithterra/php-backend-library).
 
 
 ## Prerequisites
-PHP version 5.6, 7.0, 7.1, 7.2, 7.3, or 7.4  
+PHP version 5.6, 7.0, 7.1, 7.2, 7.3, 7.4 or 8.1
 PHP extensions: ext-json, ext-curl, ext-mbstring  
 Updated WordPress and WooCommerce versions
+Pretty permalinks activated in Settings > Permalinks so that the custom endpoints are supported. Default permalinks will not work.
 
 
 ## Installation
@@ -31,7 +32,6 @@ Plugin installed - see [Usage](#usage) section.
 ### From zip-archive (manually)
 
 1. Download archive from [WordPress marketplace](https://wordpress.org/plugins/paywithterra-payment-gateway/)
-or from [release on GitHub](https://github.com/paywithterra/woocommerce-paywithterra/releases/latest)
 2. Unpack this archive to the `wp-content/plugins` directory.
 
 ### From git (console)
@@ -39,14 +39,14 @@ or from [release on GitHub](https://github.com/paywithterra/woocommerce-paywitht
 ~~~~ bash
 cd wp-content/plugins
 
-git clone --recursive https://github.com/paywithterra/woocommerce-paywithterra.git
+git clone --recursive https://github.com/paywithterra/woocommerce-paywithterra.git paywithterra-payment-gateway
 ~~~~
 
 ## Usage
 
 1. Activate plugin in WordPress Dashboard named  **PaywithTerra Payment Gateway**
 2. Press "Set up" button near the plugin
-3. Fill the API Key and Address fields and make payment method Active.
+3. Fill the Setting form with your Terra Address and make payment method Active.
 
 **That's all! Now your customers are able to pay for orders through the Terra blockchain.**
 

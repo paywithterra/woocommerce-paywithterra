@@ -1,3 +1,3 @@
-[submodule "php-api-library"]
-	path = php-api-library
-	url = https://github.com/paywithterra/php-api-library.git
+[submodule "php-backend-library"]
+	path = php-backend-library
+	url = https://github.com/paywithterra/php-backend-library.git

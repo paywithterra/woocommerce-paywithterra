@@ -4,14 +4,22 @@
  * Plugin URI: https://github.com/paywithterra/woocommerce-paywithterra
  * Description: Take Terra payments on your WooCommerce store.
  * Author: PaywithTerra
- * Author URI: https://paywithterra.com
- * Version: 1.0.7
+ * Author URI: https://paywithterra.org
+ * Version: 2.0.0
  * License: MIT
  */
+
+use PaywithTerra\Exception\TxValidationException;
+use PaywithTerra\TerraTxValidator;
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
 
 /*
  * This hook registers our PHP class as a WooCommerce payment gateway
  */
+
 add_filter( 'woocommerce_payment_gateways', 'paywithterra_add_gateway_class' );
 if ( ! function_exists( 'paywithterra_add_gateway_class' ) ) {
 	function paywithterra_add_gateway_class( $gateways ) {
@@ -24,15 +32,15 @@ if ( ! function_exists( 'paywithterra_add_gateway_class' ) ) {
 add_action( 'plugins_loaded', 'paywithterra_init_gateway_class' );
 if ( ! function_exists( 'paywithterra_init_gateway_class' ) ) {
 	function paywithterra_init_gateway_class() {
-		
-		if(! class_exists('WC_Payment_Gateway')){
+
+		if ( ! class_exists( 'WC_Payment_Gateway' ) ) {
 			error_log( 'WooCommerce is not installed or activated' );
 
 			return;
 		}
 
 		// Load PaywithTerra PHP library
-		$library_path = __DIR__ . DIRECTORY_SEPARATOR . 'php-api-library/src/PaywithTerraClient.php';
+		$library_path = __DIR__ . DIRECTORY_SEPARATOR . 'php-backend-library/src/autoload-legacy.php';
 		if ( ! file_exists( $library_path ) ) {
 			error_log( 'PaywithTerra plugin is not installed properly (PaywithTerraClient not found)!' );
 
@@ -44,15 +52,52 @@ if ( ! function_exists( 'paywithterra_init_gateway_class' ) ) {
 			protected $type = 'PWT';
 		}
 
+		/**
+		 * Data from frontend encapsulated in this class
+		 */
+		class WC_PaywithTerra_Callback_Data {
+
+			public $memo;
+			public $merchant_address;
+			public $denom;
+			public $tx_hash;
+
+			public function __construct( $inputData = [] ) {
+
+				$params = [ 'memo', 'merchantAddress', 'denom', 'txHash' ];
+				foreach ( $params as $param ) {
+					if ( ! isset( $inputData[ $param ] ) ) {
+						wp_die( 'Missing parameter: ' . $param );
+					}
+				}
+
+				$this->memo             = sanitize_text_field( $inputData['memo'] );
+				$this->merchant_address = sanitize_text_field( $inputData['merchantAddress'] );
+				$this->denom            = sanitize_text_field( $inputData['denom'] );
+				$this->tx_hash          = sanitize_text_field( $inputData['txHash'] );
+			}
+		}
+
 		class WC_PaywithTerra_Gateway extends WC_Payment_Gateway {
 
 			public $address;
-			private $private_key;
+			public $network;
+			public $prefix;
+			public $denom;
+			public $denom_rate;
+			public $tx_link_template;
 
 			private $disable_ssl_check = false;
 
+			static $DEFAULT_DENOM = 'uluna';
+			static $DEFAULT_DENOM_RATE = 1;
+			static $DEFAULT_NETWORK = 'mainnet';
+			static $TEST_NETWORK = 'testnet';
+			static $DEFAULT_PREFIX = 'ORD-';
+			static $DEFAULT_TX_LINK_TEMPLATE = 'https://finder.terra.money/{network}/tx/';
+
 			/**
-			 * Whether or not logging is enabled
+			 * Whether logging is enabled
 			 * @var bool
 			 */
 			public static $log_enabled = false;
@@ -83,14 +128,18 @@ if ( ! function_exists( 'paywithterra_init_gateway_class' ) ) {
 
 				// Load the settings.
 				$this->init_settings();
-				$this->icon        = $this->selected_icon_url(); // URL of the icon that will be displayed on checkout page
-				$this->title       = $this->get_option( 'title' );
-				$this->description = $this->get_option( 'description' );
-				$this->enabled     = $this->get_option( 'enabled' );
-				$this->address     = $this->get_option( 'address' );
-				$this->private_key = $this->get_option( 'private_key' );
+				$this->icon              = $this->selected_icon_url(); // URL of the icon that will be displayed on checkout page
+				$this->title             = $this->get_option( 'title' );
+				$this->description       = $this->get_option( 'description' );
+				$this->enabled           = $this->get_option( 'enabled' );
+				$this->address           = $this->get_option( 'address' );
+				$this->prefix            = $this->get_option( 'prefix', self::$DEFAULT_PREFIX );
+				$this->network           = $this->get_option( 'network', self::$DEFAULT_NETWORK );
+				$this->denom             = $this->get_option( 'denom', self::$DEFAULT_DENOM );
+				$this->denom_rate        = $this->get_option( 'denom_rate', self::$DEFAULT_DENOM_RATE );
+				$this->tx_link_template  = $this->get_option( 'tx_link_template', self::$DEFAULT_TX_LINK_TEMPLATE );
 				$this->disable_ssl_check = $this->get_option( 'disable_ssl_check' ) === 'yes';
-				self::$log_enabled = ( "yes" === $this->get_option( 'log_enabled' ) );
+				self::$log_enabled       = ( "yes" === $this->get_option( 'log_enabled' ) );
 
 				add_action( 'woocommerce_update_options_payment_gateways_' . $this->id, array(
 					$this,
@@ -98,77 +147,21 @@ if ( ! function_exists( 'paywithterra_init_gateway_class' ) ) {
 				) );
 
 				add_action( 'woocommerce_api_paywithterra', array( $this, 'webhook' ) );
+
+				if ( 'yes' === $this->enabled ) {
+					add_filter( 'woocommerce_thankyou_order_received_text', array(
+						$this,
+						'order_received_text'
+					), 10, 2 );
+				}
 			}
 
 			/**
 			 * Plugin options
 			 */
 			public function init_form_fields() {
-
-				$this->form_fields = array(
-					'private_key'     => array(
-						'title'       => 'API Key (token)',
-						'type'        => 'password',
-						'description' => 'API key from your PaywithTerra <a target="_blank" href="https://paywithterra.com/account">account page</a>.',
-					),
-					'address'         => array(
-						'title'       => 'Terra address',
-						'type'        => 'text',
-						'description' => 'Your shop wallet address on the Terra blockchain to receiving payments.',
-					),
-					'enabled'         => array(
-						'title'       => 'Enable/Disable',
-						'label'       => 'Enable PaywithTerra Gateway',
-						'type'        => 'checkbox',
-						'description' => '',
-						'default'     => 'no'
-					),
-					'title'           => array(
-						'title'       => 'Title',
-						'type'        => 'text',
-						'description' => 'This controls the title which the user sees during checkout.',
-						'default'     => 'PaywithTerra',
-					),
-					'description'     => array(
-						'title'       => 'Description',
-						'type'        => 'textarea',
-						'description' => 'This controls the description which the user sees during checkout.',
-						'default'     => '',
-					),
-					'log_enabled'     => array(
-						'title'       => 'Error logging',
-						'label'       => 'Enable logging for errors while interaction with PaywithTerra API',
-						'type'        => 'checkbox',
-						'description' => '',
-						'default'     => 'no'
-					),
-					'icon'            => array(
-						'title'       => 'Public icon',
-						'type'        => 'select',
-						'default'     => 'logo',
-						'options'     => array(
-							'logo'       => "PaywithTerra logo",
-							'icon-rect'  => "PaywithTerra icon rectangle",
-							'custom-url' => "Custom icon",
-						),
-						'description' => 'Shown on payment method selection page',
-					),
-					'custom_icon_url' => array(
-						'title'       => 'Custom icon',
-						'type'        => 'text',
-						'placeholder' => 'https://',
-						'description' => '<b>Full url</b> (from http) to custom payment icon image.',
-						'default'     => '',
-					),
-					'disable_ssl_check' => array(
-						'title'       => 'Disable SSL Check',
-						'label'       => 'Enable this option to skip SSL check while connecting to PaywithTerra Gateway',
-						'type'        => 'checkbox',
-						'description' => '',
-						'default'     => 'no'
-					),
-				);
-
+				// ! do not replace to "require_once" because it will be executed more than once
+				$this->form_fields = require __DIR__ . '/includes/settings-paywithterra.php';
 			}
 
 			public function selected_icon_url() {
@@ -193,7 +186,7 @@ if ( ! function_exists( 'paywithterra_init_gateway_class' ) ) {
 			public function validate_fields() {
 
 				// In case of plugin was activated but properly set up not completed
-				if ( strlen( $this->address ) === 0 or strlen( $this->private_key ) === 0 ) {
+				if ( strlen( $this->address ) === 0 ) {
 					wc_add_notice( 'PaywithTerra plugin is not configured properly!
 				Please, contact website administrator', 'error' );
 
@@ -204,263 +197,167 @@ if ( ! function_exists( 'paywithterra_init_gateway_class' ) ) {
 			}
 
 			/*
-			 * We're processing the payments request here
+			 * No real payment processing here, just directing to a special page
 			 */
 			public function process_payment( $order_id ) {
-
-				global $woocommerce;
-
-				$uuid = $this->get_or_create_remote_order_uuid( $order_id );
-
-				if ( $uuid === false ) {
-					return false;
-				}
-
-				// Empty cart
-				$woocommerce->cart->empty_cart();
 
 				// Redirect to payment page
 				return array(
 					'result'   => 'success',
-					'redirect' => 'https://paywithterra.com/pay/' . $uuid
+					'redirect' => $this->get_webhook_full_url( $order_id )
 				);
+			}
+
+			/*
+			 * Compile our webhook url
+			 */
+			protected function get_webhook_full_url( $order_id ) {
+				return home_url( '/wc-api/' . $this->id . '?order=' . $order_id );
 			}
 
 			/*
 			 * In case you need a webhook, like PayPal IPN etc
 			 */
 			public function webhook() {
+				if ( ! isset( $_GET['order'] ) ) {
+					$this->log( "Payment Webhook called without parameters", 'critical' );
+
+					wp_die( 'Order parameter was not passed' );
+				}
+
+				$order_id = absint( sanitize_text_field( $_GET['order'] ) );
+
+				$order = wc_get_order( $order_id );
+
+				if ( ! $order ) {
+					$this->log( "Payment Webhook called for non-existing order $order_id", 'critical' );
+
+					wp_die( "Order $order_id was not found" );
+				}
+
+				$post_data_json = file_get_contents( "php://input" );
+				$post_data      = json_decode( $post_data_json, true );
+
+				if ( ! isset( $post_data['txHash'] ) ) {
+
+					if ( $order->is_paid() ) {
+						$this->log( "Payment Webhook called for already paid order $order_id", 'critical' );
+						$this->redirect_to( $this->get_return_url( $order ) );
+					}
+
+					/**
+					 * Payment step 1 (rendering payment page)
+					 */
+					$this->page_render( $order );
+
+				} else {
+
+					/**
+					 * Process payment step 2 (payment confirmation)
+					 */
+					$this->process_payment_callback( $order, new WC_PaywithTerra_Callback_Data( $post_data ) );
+				}
+			}
+
+			/**
+			 * @param WC_Order $order
+			 *
+			 * @return void
+			 */
+			protected function page_render( $order ) {
+
+				$template = plugin_dir_path( __FILE__ ) . 'assets/payment-page.html';
+				$content  = file_get_contents( $template );
+
+				$rendered_content = str_replace( [
+					'{{order_id}}',
+					'{{order_total}}',
+					'{{order_prefix}}',
+					'{{order_denom}}',
+					'{{order_amount}}',
+					'{{order_currency}}',
+					'{{merchant_endpoint}}',
+					'{{merchant_address}}',
+					'{{network}}',
+					'{{testnet_warning}}',
+					'{{finder_tx_url}}',
+				], [
+					$order->get_id(),
+					$order->get_total(),
+					$this->prefix,
+					$this->denom(),
+					$this->calculate_uamount( $order->get_total() ),
+					$order->get_currency(),
+					$this->get_webhook_full_url( $order->get_id() ),
+					$this->merchantAddress(),
+					$this->network(),
+					$this->showTestnetWarning() ? 'true' : 'false',
+					$this->tx_link_finder(),
+				], $content );
+
+				$this->send_response_html( $rendered_content );
+			}
+
+			/**
+			 * @param WC_Order $order
+			 * @param WC_PaywithTerra_Callback_Data $incoming_data
+			 *
+			 * @return string
+			 */
+			protected function process_payment_callback( $order, $incoming_data ) {
 
 				$client = $this->prepare_client();
 
-				/*
-				 * For WP Review team
-				 * About: "you should only be attempting to process the items 
-				 * within that are required for your plugin to function"
-				 *
-				 * We must create hash from all incoming data, because regarding server settings
-				 * or requested mode (LIVE or TEST) - server may send different sets of fields. 
-				 * So there is no exist static list of predefined fields.
-				 * If we put to $client->checkIncomingData only whitelisted fields - resulting hash 
-				 * may be different from the hash which calculated on server.
-				 * 
-				 * That's why we put to sanitizer and hash calculator all incoming data
+				try {
+					$client->lookupTx( $incoming_data->tx_hash );
+
+					$client->assertTx( [
+						"memo"   => $this->prefix . $order->get_id(),
+						"denom"  => $this->denom(),
+						"amount" => $this->calculate_uamount( $order->get_total() ),
+					] );
+				} catch ( TxValidationException $e ) {
+					$this->send_response_json( [ 'error' => $e->getMessage() ], 400 );
+				} catch ( \Exception $e ) {
+					$this->send_response_json( [ 'error' => $e->getMessage() ], 500 );
+				}
+
+				/**
+				 * If we are here, then transaction is valid
 				 */
-				$data_sanitized = array_map( 'sanitize_text_field', $_POST );
-
-				// Protection Layer 1 - checking correct hash
-				$data_checked = $client->checkIncomingData( $data_sanitized );
-
-				$memo          = $data_checked['memo'];
-				$order_id      = (int) $memo;
-				$input_address = $data_checked['address'];
-				$input_amount  = (int) $data_checked['amount'];
-				$input_denom   = $data_checked['denom'];
-				$input_uuid    = $data_checked['uuid'];
-				$txhash        = $data_checked['txhash'];
-
-
-				$order = wc_get_order( $order_id );
-				if ( ! $order ) {
-					$this->log( "Webhook: order was not found by specified ID: $order_id", 'critical' );
-
-					return;
-				}
-
-				$issued_tokens = $this->get_order_payment_tokens( $order );
-
-				// Protection Layer 2 - remote order need to be issued from this system
-				if ( ! in_array( $input_uuid, $issued_tokens ) ) {
-					$order->add_order_note( "Order processing error: unissued uuid." );
-
-					$this->log( "Webhook: remote order uuid was not issued: $input_uuid", 'critical' );
-
-					return;
-				}
-
-
-				// Protection Layer 3 - order data must be same
-				$order_amount = $this->calculate_uamount( $order->get_total() );
-				if ( $order_amount !== $input_amount ) {
-					$order->add_order_note( "Order processing error: wrong amount. $input_amount != $order_amount" );
-
-					$this->log( "Webhook: amounts not equals: $input_amount != $order_amount", 'critical' );
-
-					return;
-				}
-
-				if ( $order_denom = $this->currency_to_denom( $order->get_currency() ) !== $input_denom ) {
-					$order->add_order_note( "Order processing error: wrong denom (currency)." );
-
-					$this->log( "Webhook: denoms not equals: $input_denom != $order_denom", 'critical' );
-
-					return;
-				}
-				if ( $input_address != $this->address ) {
-					$order->add_order_note( "Tx payment address is not the same as in payment gateway settings." );
-
-					$this->log( "Webhook: addresses not equals: $input_address != $this->address", 'critical' );
-
-					return;
-				}
-
-
-				// Protection Layer 4 - doing "Second check" to request actual data from API
-				$payment_result = $client->getOrderStatusByUUID( $input_uuid );
-				$is_payed = (bool) $payment_result["is_payed"];
-
-				if ( ! $is_payed ) {
-					$order->add_order_note( "PaywithTerra API returned that order does not payed." );
-
-					$this->log( "Webhook: second check failed", 'critical' );
-
-					return;
-				}
 
 				// Mark order as payment complete
 				$order->payment_complete();
-				
-				$terra_finder_link = esc_url($payment_result['tx_link']);
 
-				$order_note = "Payment was captured. TxHash: " . $txhash;
+				$terra_finder_link = esc_url( $this->tx_link( $incoming_data->tx_hash ) );
+
+				$order_note = "Payment was captured. TxHash: " . $incoming_data->tx_hash;
 				$order_note .= "\n";
-				$order_note .= '<a href="'.$terra_finder_link.'" target="_blank">View on Terra Finder</a>';
+				$order_note .= '<a href="' . $terra_finder_link . '" target="_blank">View on Terra Finder</a>';
 				$order->add_order_note( $order_note );
 
+				$this->send_response_json( [
+					'success'  => true,
+					'closeUrl' => $this->get_return_url( $order ),
+				] );
 			}
 
-			protected function prepare_client()
-			{
-				$client = new PaywithTerra\PaywithTerraClient( $this->private_key );
-
-				$opts = [
+			protected function prepare_client() {
+				$curlOptions = [
 					CURLOPT_TIMEOUT => 30,
 				];
 
-				if($this->disable_ssl_check){
-					$opts[CURLOPT_SSL_VERIFYPEER] = false;
-					$opts[CURLOPT_SSL_VERIFYHOST] = false;
+				if ( $this->disable_ssl_check ) {
+					$curlOptions[ CURLOPT_SSL_VERIFYPEER ] = false;
+					$curlOptions[ CURLOPT_SSL_VERIFYHOST ] = false;
 				}
 
-				$client->setCurlOptions($opts);
-
-				return $client;
-			}
-
-			/**
-			 * Returns first actual payment token from database if exists
-			 *
-			 * @param WC_Order $order
-			 *
-			 * @return string|false
-			 */
-			protected function get_order_token( $order ) {
-				$issued_uuids = $this->get_order_payment_tokens( $order );
-
-				if ( count( $issued_uuids ) === 0 ) {
-					return false;
-				}
-
-				$client = $this->prepare_client();
-
-				foreach ( $issued_uuids as $uuid ) {
-					$order_data = $client->getOrderStatusByUUID( $uuid );
-					if ( ! isset( $order_data['error'] ) ) {
-						return $uuid;
-					}
-				}
-
-				return false;
-			}
-
-			/**
-			 * Returns payment tokens list as UUIDs - array
-			 *
-			 * @param $order
-			 *
-			 * @return array
-			 */
-			protected function get_order_payment_tokens( $order ) {
-				$ids = $order->get_payment_tokens();
-				if ( count( $ids ) === 0 ) {
-					return array();
-				}
-
-				$uuids = array();
-
-				foreach ( $ids as $token_id ) {
-					$paymentToken = new WC_PaywithTerra_Token( $token_id );
-					$uuids[]      = $paymentToken->get_token();
-				}
-
-				return $uuids;
-			}
-
-			/**
-			 * Get payment token for order (create if not exists)
-			 *
-			 * @param $order_id
-			 *
-			 * @return false|mixed|string
-			 */
-			protected function get_or_create_remote_order_uuid( $order_id ) {
-				$order = wc_get_order( $order_id );
-
-				$exists_uuid = $this->get_order_token( $order );
-
-				if ( $exists_uuid !== false ) {
-					return $exists_uuid;
-				}
-
-				$client = $this->prepare_client();
-
-				$order_info = $client->createOrder( array(
-					"address"    => $this->address,
-					"memo"       => (string) $order->get_id(),
-					"webhook"    => home_url( '/wc-api/' . $this->id . '/' ),
-					"amount"     => $this->calculate_uamount( $order->get_total() ),
-					"denom"      => $this->currency_to_denom( $order->get_currency() ), // Like "uusd"
-					"return_url" => $this->get_return_url( $order )
-				) );
-
-				if ( ! in_array($response_code = (int) $client->getLastResponseCode(), array( 200, 201 ) ) ) {
-
-					$err = "Unable to create PaywithTerra order. Code: $response_code";
-					if ( isset( $order_info['message'] ) ) {
-						$err .= $order_info['message'] . ' <br>';
-						if ( isset( $order_info['errors'] ) ) {
-
-							$plainErrors = array_map( function ( $er ) {
-								return sanitize_text_field( reset( $er ) );
-							}, $order_info['errors'] );
-
-							$err .= implode( "<br>", $plainErrors );
-						}
-					}
-					$err .= '<br>Please, contact website administrator';
-					wc_add_notice( $err, 'error' );
-
-					$this->log( json_encode( $order_info ), 'critical' );
-
-					return false;
-
-				}
-
-				if ( ! isset( $order_info['uuid'] ) or strlen( $order_info['uuid'] ) === 0 ) {
-					wc_add_notice( "Wrong response from PaywithTerra", 'error' );
-
-					return false;
-				}
-
-				$uuid         = $order_info['uuid'];
-				$paymentToken = new WC_PaywithTerra_Token();
-				$paymentToken->set_token( $uuid );
-				$paymentToken->set_gateway_id( $this->id );
-				$paymentToken->save();
-
-				$order->add_payment_token( $paymentToken );
-
-				return $uuid;
+				return new TerraTxValidator( [
+					"networkName"     => $this->network(),
+					"cache"           => new \PaywithTerra\Cache\FileCache(),
+					"merchantAddress" => $this->merchantAddress(),
+					"curlOptions"     => $curlOptions,
+				] );
 			}
 
 			/**
@@ -483,9 +380,42 @@ if ( ! function_exists( 'paywithterra_init_gateway_class' ) ) {
 			 * @return int
 			 */
 			protected function calculate_uamount( $amount ) {
-				return (int) round( $amount * 1000000, 0, PHP_ROUND_HALF_UP );
+				return (int) round( $amount * $this->denom_rate * 1000000, 0, PHP_ROUND_HALF_UP );
 			}
 
+			/**
+			 * @param mixed $response
+			 *
+			 * @return void
+			 */
+			protected function send_response_json( $response, $status_code = 200 ) {
+				$this->send_response_headers( 'Content-Type: application/json', $status_code );
+				echo json_encode( $response );
+				exit;
+			}
+
+			protected function send_response_html( $response ) {
+				$this->send_response_headers(
+					"Content-Type: text/html; charset=" . get_option( 'blog_charset' ), 200 );
+				echo $response;
+				exit;
+			}
+
+			protected function send_response_headers( $primary_header, $status_code = 200 ) {
+				if ( ! headers_sent() ) {
+					send_origin_headers();
+					send_nosniff_header();
+					wc_nocache_headers();
+					header( $primary_header );
+					header( 'X-Robots-Tag: noindex' );
+					status_header( $status_code );
+				}
+			}
+
+			protected function redirect_to( $url ) {
+				$this->send_response_headers( "Location: $url", 302 );
+				exit;
+			}
 
 			/**
 			 * Logging method.
@@ -501,6 +431,99 @@ if ( ! function_exists( 'paywithterra_init_gateway_class' ) ) {
 					}
 					self::$log->log( $level, $message, array( 'source' => $this->id ) );
 				}
+			}
+
+			protected function denom() {
+				return $this->denom;
+			}
+
+			protected function tx_link( $tx_hash ) {
+				return $this->tx_link_finder() . $tx_hash;
+			}
+
+			protected function tx_link_finder() {
+				return str_replace( '{network}', $this->network(), $this->tx_link_template );
+			}
+
+			protected function network() {
+				return $this->network;
+			}
+
+			protected function showTestnetWarning() {
+				return $this->network === self::$TEST_NETWORK;
+			}
+
+			protected function merchantAddress() {
+				return $this->address;
+			}
+
+			protected function generate_paywithterra_form_asset_html( $key, $data ) {
+				$field_key = $this->get_field_key( $key );
+				$defaults  = array(
+					'title'             => '',
+					'disabled'          => false,
+					'class'             => '',
+					'css'               => '',
+					'placeholder'       => '',
+					'type'              => 'text',
+					'desc_tip'          => false,
+					'description'       => '',
+					'custom_attributes' => array(),
+				);
+
+				$data = wp_parse_args( $data, $defaults );
+
+				ob_start();
+				?>
+                <tr valign="top">
+                    <th scope="row" class="titledesc">
+                        <label for="<?php echo esc_attr( $field_key ); ?>"><?php echo wp_kses_post( $data['title'] ); ?><?php echo $this->get_tooltip_html( $data ); // WPCS: XSS ok. ?></label>
+                    </th>
+                    <td class="forminp">
+                        <fieldset>
+                            <legend class="screen-reader-text">
+                                <span><?php echo wp_kses_post( $data['title'] ); ?></span></legend>
+                            <input class="input-text regular-input <?php echo esc_attr( $data['class'] ); ?>"
+                                   type="text" name="<?php echo esc_attr( $field_key ); ?>"
+                                   id="<?php echo esc_attr( $field_key ); ?>"
+                                   style="<?php echo esc_attr( $data['css'] ); ?>"
+                                   value="<?php echo esc_attr( $this->get_option( $key ) ); ?>"
+                                   placeholder="<?php echo esc_attr( $data['placeholder'] ); ?>" <?php disabled( $data['disabled'], true ); ?> <?php echo $this->get_custom_attribute_html( $data ); // WPCS: XSS ok. ?> />
+                            <p class="description">
+                                Quick paste:
+                                <a href="javascript:void(0)"
+                                   onclick="document.querySelector('#<?php echo esc_attr( $field_key ); ?>').value='uluna'">Luna</a>,
+                                <a href="javascript:void(0)"
+                                   onclick="document.querySelector('#<?php echo esc_attr( $field_key ); ?>').value='ibc/CBF67A2BCF6CAE343FDF251E510C8E18C361FC02B23430C121116E0811835DEF'">axlUSDT</a>,
+                                <a href="javascript:void(0)"
+                                   onclick="document.querySelector('#<?php echo esc_attr( $field_key ); ?>').value='ibc/B3504E092456BA618CC28AC671A71FB08C6CA0FD0BE7C8A5B5A3E2DD933CC9E4'">axlUSDC</a>
+                                <br>
+                                See also: <a href="https://assets.terra.money/ibc/tokens.json" target="_blank">Full
+                                    list</a>
+                            </p>
+                        </fieldset>
+                    </td>
+                </tr>
+				<?php
+
+				return ob_get_clean();
+			}
+
+			/**
+			 * Custom order received text.
+			 *
+			 * @param string $text Default text.
+			 * @param WC_Order $order Order data.
+			 *
+			 * @return string
+			 */
+			public function order_received_text( $text, $order ) {
+				if ( $order && $order->is_paid() && $this->id === $order->get_payment_method() ) {
+					return esc_html( 'Thank you for your payment.
+					Your transaction has been registered, and a receipt for your purchase has been emailed to you.' );
+				}
+
+				return $text;
 			}
 		}
 	}
